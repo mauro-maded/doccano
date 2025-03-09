@@ -34,8 +34,64 @@ export class SequenceLabelingApplicationService extends AnnotationApplicationSer
     }
   }
 
-  public async changeLabel(
+  /**
+   * Finds all occurrences of a text string in the document
+   * @returns Array of [startOffset, endOffset] tuples
+   */
+  public findAllTextOccurrences(searchText: string, documentText: string): [number, number][] {
+    const results: [number, number][] = []
+    let startIndex = 0
+    let index: number
+
+    while ((index = documentText.indexOf(searchText, startIndex)) > -1) {
+      results.push([index, index + searchText.length])
+      startIndex = index + searchText.length // Skip past this occurrence
+    }
+
+    return results
+  }
+
+  /**
+   * Creates spans for all occurrences of the specified text in the document
+   * @returns Number of spans successfully created
+   */
+  public async createForAllOccurrences(
     projectId: string,
+    exampleId: number,
+    labelId: number,
+    searchText: string,
+    documentText: string,
+    skipFirst: boolean = false
+  ): Promise<number> {
+    const offsets = this.findAllTextOccurrences(searchText, documentText)
+    let createdCount = 0
+
+    // Process each occurrence
+    for (const [startOffset, endOffset] of offsets) {
+      // Skip the first occurrence if requested (since it's already annotated)
+      if (skipFirst && createdCount === 0) {
+        createdCount++;
+        continue;
+      }
+      
+      try {
+        const item = new Span(0, labelId, 0, startOffset, endOffset)
+        await this.repository.create(projectId, exampleId, item)
+        createdCount++
+      } catch (e: any) {
+        console.log(e.response.data.detail)
+      }
+    }
+    
+    return createdCount
+  }
+
+
+
+
+
+  public async changeLabel(
+    projectId: string, 
     exampleId: number,
     annotationId: number,
     labelId: number
