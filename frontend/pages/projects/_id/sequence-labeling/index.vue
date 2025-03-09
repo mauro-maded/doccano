@@ -81,7 +81,16 @@
         </v-expand-transition>
       </v-card>
       <list-metadata :metadata="doc.meta" class="mt-4" />
+      
     </template>
+    <apply-all-dialog
+      v-model="showApplyAllDialog"
+      :label-text="selectedLabel ? selectedLabel.text : ''"
+      :label-id="selectedLabel ? selectedLabel.id : 0"
+      :highlighted-text="highlightedText"
+      :occurrence-count="occurrenceCount"
+      @apply="applyLabelToAllOccurrences"
+    />
   </layout-text>
 </template>
 
@@ -95,6 +104,7 @@ import EntityEditor from '@/components/tasks/sequenceLabeling/EntityEditor.vue'
 import AnnotationProgress from '@/components/tasks/sidebar/AnnotationProgress.vue'
 import ToolbarLaptop from '@/components/tasks/toolbar/ToolbarLaptop'
 import ToolbarMobile from '@/components/tasks/toolbar/ToolbarMobile'
+import ApplyAllDialog from '@/components/tasks/sequenceLabeling/ApplyAllDialog'
 
 export default {
   components: {
@@ -103,7 +113,8 @@ export default {
     LayoutText,
     ListMetadata,
     ToolbarLaptop,
-    ToolbarMobile
+    ToolbarMobile,
+    ApplyAllDialog
   },
 
   layout: 'workspace',
@@ -127,7 +138,11 @@ export default {
       relationMode: false,
       showLabelTypes: true,
       mdiChevronUp,
-      mdiChevronDown
+      mdiChevronDown,
+      showApplyAllDialog: false,
+      highlightedText: '',
+      selectedLabel: null,
+      occurrenceCount: 0
     }
   },
 
@@ -233,6 +248,12 @@ export default {
     },
 
     async addSpan(startOffset, endOffset, labelId) {
+      // Store the highlighted text and selected label
+      const documentText = this.doc.text
+      this.highlightedText = documentText.substring(startOffset, endOffset)
+      this.selectedLabel = this.spanTypes.find(label => label.id === labelId)
+
+      // Create the span for the current selection
       await this.$services.sequenceLabeling.create(
         this.projectId,
         this.doc.id,
@@ -240,6 +261,38 @@ export default {
         startOffset,
         endOffset
       )
+      
+      // Find all occurrences to see if there are others
+      const occurrences = this.$services.sequenceLabeling
+        .findAllTextOccurrences(this.highlightedText, documentText)
+      
+      // Set occurrence count (subtract 1 for the one we just created)
+      this.occurrenceCount = occurrences.length - 1
+      
+      // Show dialog only if there are additional occurrences
+      if (this.occurrenceCount > 0) {
+        this.showApplyAllDialog = true
+      }
+      
+      // Refresh the list
+      await this.list(this.doc.id)
+    },
+
+    // Add this method to handle applying labels to all occurrences
+    async applyLabelToAllOccurrences() {
+      const createdCount = await this.$services.sequenceLabeling.createForAllOccurrences(
+        this.projectId,
+        this.doc.id,
+        this.selectedLabel.id,
+        this.highlightedText,
+        this.doc.text,
+        true // Skip the first occurrence as we've already annotated it
+      )
+      
+      // Display a success message
+      this.$toasted.show(`Applied label to ${createdCount} other occurrences`)
+      
+      // Refresh the list to show the new annotations
       await this.list(this.doc.id)
     },
 
